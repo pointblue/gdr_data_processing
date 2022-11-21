@@ -1,7 +1,8 @@
-# this file started with copy of GDR_diveStats_1617.R on 4/21/2021
+# this file started with copy of GDR_diveStats_1617 on 4/21/2021
 
 # Two main functions for calculating dive stats
-# diveStats_GDR and OneDiveStats_GDR are modified versions (modified by AS) of the functions originally in diveMove (v 1.4.5)
+# These are modified versions (modified by AS) of the functions in diveMove (v 1.4.5)
+# First function uses the second one to calculate statistics for each dive
 
 
 # update for 1819####
@@ -25,8 +26,18 @@
 # --------------- hoping will be a little cleaner and faster
 # --------------- also adding column to identify which case dive was qualified under
 
+# v3.2 update 5/4/22: adding ascent and descent phases and summary stats to match divesum.fxp (v8.1 by G. Ballard)
+# Note: it re-run on everything need to adjust times_ds for clock drift and reboots
+
 
 # # outer function to read in calibrated data and apply diveStats functions to each individual
+# bird=6574
+# seas=2018
+# gdr_depl=depl18
+#
+# s3_path="~/s3data/GDR_1819_zoc/"
+# out="~/s3data/GDR_1819_diveStats/"
+# diveStats_source = "~/Documents/code/ADPE_GDR/diveStats_GDR.R"
 
 diveStats_yr <-
   function(bird,
@@ -35,6 +46,9 @@ diveStats_yr <-
            s3_path,
            out = "~/diveStats") {
     require(dplyr)
+    # Source dive stats functions
+    # source('Z:/Informatics/S031/analyses/GDR/code/diveStats_GDR.R')
+    # source(diveStats_source)
     # select deploy data for that bird
     gdr_depl <- gdr_depl %>%
       filter(season == seas)
@@ -56,8 +70,8 @@ diveStats_yr <-
                1)
     # Set up paths to files
     if (s3_path == "bucket") {
-      prefix = "your_prefix"
-      bucket = "your_bucket"
+      prefix = paste0("GDR_", seas_code, "_zoc")
+      bucket = paste0("pb-adelie/", prefix)
       try(dcalib <-
             s3readRDS(object = zoc_name,
                       bucket = bucket,
@@ -70,10 +84,10 @@ diveStats_yr <-
     }
     # check if was able to load a calibrated file, if file doesn't exist, print error rather than stopping
     if (!exists("dcalib")) {
-      message(paste("Error:", zoc_name, "does not exist", sep = " "))
+      print(paste("Error:", zoc_name, "does not exist", sep = " "))
     } else{
       # Calculate dive statistics
-      message(paste("calculating dive stats for", file))
+      print(paste("calculating dive stats for", file))
       try(diveStats_tab <- diveStats_GDR(dcalib))
     }
     if (!exists("diveStats_tab")) {
@@ -101,7 +115,7 @@ diveStats_yr <-
         
       } else{
         # Change start date and time of rebooted loggers
-        message("logger rebooted, adjusting clock start and clock drift")
+        print("logger rebooted, adjusting clock start and clock drift")
         # get date that logger rebooted from rebooted file
         clock_start <-
           rebooted$date_start[rebooted$filename == file]
@@ -175,11 +189,11 @@ diveStats_yr <-
       
       file_path <- paste0(out, file_id)
       print(paste("writing:", file_path, sep = " "))
-      write_csv(diveStats_tab, file = file_path) # writing individual file
+      write_csv(diveStats_tab, file = file_path) # writing individual files for now in case of crashes
       #clear objects from environment
       rm(dcalib)
       rm(diveStats_tab)
-      gc()
+      # gc()
     }
   }
 
@@ -236,7 +250,9 @@ dive_summary <- function(diveStats_tab, season) {
 }
 
 
-# Function to calculate statistics for all dives
+# dcalib <- s3readRDS(object = "583001119_1801130c18_zoc.Rda",bucket="pb-adelie/GDR_1819_zoc")
+# x = dcalib
+
 diveStats_GDR <-
   function (x,
             strategy = "multisession",
@@ -296,16 +312,21 @@ diveStats_GDR <-
     message('moving to next file')
   }
 
+# td <-
+  # as.data.frame(read_csv("Z:/Informatics/S031/analyses/GDR/data/test_dive_data.csv"))
+
+# NOTE: X needs for a data.frame not a tibble
+# x = td[td$dids == 5030, ]
 
 
 # This function selects one dive at a time and calculates numerous statistics
 # The original implementation in diveMove included speed calculations that are not implemented in this version
 # function requires a data frame with pressure data, the interval the data were recorded at, and a time zone
-# use plot = TRUE to plot individual dives for verification
 oneDiveStats_GDR <- function (x,
                               interval,
                               tz = "GMT",
                               plot = FALSE) {
+  #
   require(dplyr)
   # pull out dive ID
   did = x$dids
@@ -327,41 +348,75 @@ oneDiveStats_GDR <- function (x,
   
   # identify where change points are
   # rows where direction changes from down to up
-  du_row <- which(x$dir_change == 8)
+  du_row <- 
+    which(x$dir_change == 8)
+  
   # rows where direction changes from up to down
-  ud_row <- which(x$dir_change == 9)
+  ud_row <- 
+    which(x$dir_change == 9)
   
   # unds 1m calcs:
   # Count all direction changes
-  unducount <- length(du_row) + length(ud_row)
+  unducount <- 
+    length(du_row) + length(ud_row)
+  
   # identify direction changes from up to down
   unds1m_rows <-
-    ud_row[which(abs(x[du_row[-length(du_row)], "ddepths"] - x[ud_row, "ddepths"]) >
-                   1)]
+    ud_row[which(abs(x[du_row[-length(du_row)], "ddepths"] - x[ud_row, "ddepths"]) > 1)]
+  
   # calculate depth differences
   unds1m_diffs <-
     abs(x[du_row[-length(du_row)], "ddepths"] - x[ud_row, "ddepths"])
   # count number where depth change >1m
   unds1m_ds <- length(which(unds1m_diffs > 1))
   
+
+
+# Extract and summarize dive phases ---------------------------------------
+
   
-  # Chunk from original oneDiveStats function:
-  desc <- x[grep("D", as.character(x[, 1])), 2:ncol(x)]
-  bott <- x[grep("B", as.character(x[, 1])), 2:ncol(x)]
-  asc <- x[grep("A", as.character(x[, 1])), 2:ncol(x)]
-  begdesc <- desc[1, 1]
-  enddesc <- desc[nrow(desc), 1]
+  # Pull out chunks for each phase of the dive
+  desc <- 
+    x %>%
+    filter(str_detect(dphases, pattern = "D")) %>% 
+    select(-dphases)
+  
+  bott <-
+    x %>%
+    filter(str_detect(dphases, pattern = "B")) %>% 
+    select(-dphases)
+  
+  asc <-
+    x %>%
+    filter(str_detect(dphases, pattern = "A")) %>% 
+    select(-dphases)
+    
+
+    
+  # desc <- x[grep("D", as.character(x[, 1])), 2:ncol(x)]
+  # bott <- x[grep("B", as.character(x[, 1])), 2:ncol(x)]
+  # asc <- x[grep("A", as.character(x[, "dphases"])), 2:ncol(x)]
+  begdesc <- desc[1, "dtimes"]
+  enddesc <- desc[nrow(desc), "dtimes"]
   desctim <-
     as.numeric(difftime(enddesc, begdesc, units = "secs") + interval / 2)
-  descdist <- max(desc[, 2], na.rm = TRUE)
-  maxdep <- max(x[, 3], na.rm = TRUE)
+  
+  # descent distance in the max depth of the decent
+  descdist <- max(desc[, "ddepths"], na.rm = TRUE)
+  
+  # max depth is max depth of the dive (x)
+  maxdep <- max(x[, "ddepths"], na.rm = TRUE)
+  
+  # if there is a bottom phase, calculate bottom stats
   if (nrow(bott) > 0) {
-    botttim <- as.numeric(difftime(bott[nrow(bott), 1], bott[1, 1],
+    botttim <- as.numeric(difftime(bott[nrow(bott), "dtimes"], bott[1, "dtimes"],
                                    units = "secs"))
-    bottdist <- sum(abs(diff(bott[!is.na(bott[, 2]), 2])))
-    bottdep_mean <- mean(bott[, 2], na.rm = TRUE)
-    bottdep_median <- median(bott[, 2], na.rm = TRUE)
-    bottdep_sd <- sd(bott[, 2], na.rm = TRUE)
+    bottdist <- sum(abs(diff(bott[!is.na(bott[, "ddepths"]), "ddepths"])))
+    bottdep_mean <- mean(bott[, "ddepths"], na.rm = TRUE)
+    bottdep_median <- median(bott[, "ddepths"], na.rm = TRUE)
+    bottdep_sd <- sd(bott[, "ddepths"], na.rm = TRUE)
+    
+  # if no bottom phase, assign NA to bottom stats  
   } else{
     botttim <- NA
     bottdist <- NA
@@ -370,53 +425,17 @@ oneDiveStats_GDR <- function (x,
     bottdep_sd <- NA
   }
   
-  # Calculate bottom stats like divesum
-  # Bottom is 60% of max dive depth and <0.5m/s change in depth
-  # speed is calculated as difference in depth between record at time t and time t+2 divided by 2
-  # so should be average depth change over 3 seconds
-  # if meets criteria, assigned "B", otherwise assigned "NB" (not bottom)
-  x$bott_ds <-
-    ifelse(x$ddepths > 0.6 * maxdep &
-             (abs(x$ddepths - lead(x$ddepths, 2)) / 2) < 0.5, "B", "NB")
-  # select bottom data
-  bott_row_ds <- which(x$bott_ds == "B")
-  
-  # if there is a bottom, calculate statistics
-  if (length(bott_row_ds) > 0) {
-    # as of v3.0: this is now selecting all data from the first "B" to the last "B"
-    bott_ds <- x[c(first(bott_row_ds):last(bott_row_ds)), 2:ncol(x)]
-    # calculate bottom time
-    # difference between first and last time in bottom
-    botttim_ds <-
-      as.numeric(difftime(bott_ds[nrow(bott_ds), 1], bott_ds[1, 1],
-                          units = "secs"))
-    # calculate bottom distance
-    bottdist_ds <- sum(abs(diff(bott_ds[!is.na(bott_ds[, 2]), 2])))
-    # calculate average depth of bottom
-    bottdep_mean_ds <- mean(bott_ds[, 2], na.rm = TRUE)
-    # calculate median depth of bottom
-    bottdep_median_ds <- median(bott_ds[, 2], na.rm = TRUE)
-    # calculate sd of bottom
-    bottdep_sd_ds <- sd(bott_ds[, 2], na.rm = TRUE)
-    # calculate average temperature at the bottom
-    temp_at_bott_ds <-
-      suppressWarnings(mean(bott_ds$dtemps, na.rm = TRUE) / 10)
-  } else{
-    # if no bottom fill in all columns with NA
-    botttim_ds = bottdist_ds = bottdep_mean_ds = bottdep_median_ds = bottdep_sd_ds =
-      temp_at_bott_ds = NA
-  }
-  
   # ascent statistics:
   # these are based on ascent period identified by diveMove criteria rather than divesum
   # identify when ascent begins
-  begasc <- asc[1, 1]
+  begasc <- asc[1, "dtimes"]
   # calculate time of ascent
   asctim <-
-    as.numeric(difftime(asc[nrow(asc), 1], begasc, units = "secs") +
+    as.numeric(difftime(asc[nrow(asc), "dtimes"], begasc, units = "secs") +
                  interval / 2)
   # calculate ascent distance
-  ascdist <- max(asc[, 2], na.rm = TRUE)
+  # ascent distance is the max depth of the ascent phase
+  ascdist <- max(asc[, "ddepths"], na.rm = TRUE)
   # sum all periods to calculate total dive time
   divetim <-
     ifelse(!is.na(botttim), desctim + botttim + asctim, desctim + asctim)
@@ -427,6 +446,107 @@ oneDiveStats_GDR <- function (x,
   # numbers would be slightly different if identifyin descent and ascent phases using bottom_ds
   ascrate <- ascdist / as.numeric(asctim)
   descrate <- descdist / as.numeric(desctim)
+  
+  
+  
+
+# Divesum stats -----------------------------------------------------------
+
+  # Calculate dive phase stats like divesum
+  # Bottom is 60% of max dive depth and <0.5m/s change in depth
+  # speed is calculated as difference in depth between record at time t and time t+2 divided by 2
+  # so should be average depth change over 3 seconds
+  # if meets criteria, assigned "B", otherwise NA
+  x$dphases_ds <-
+    ifelse(x$ddepths > 0.6 * maxdep &
+             (abs(x$ddepths - lead(x$ddepths, 2)) / 2) < 0.5, "B", NA)
+  
+  # #select decent data
+  # desc_ds <-
+  #   x[1:first(which(x$dphases_ds == "B")),]
+  # 
+  # # select ascent data
+  # asc_ds <- 
+  #   x[last(which(x$dphases_ds == "B")):nrow(x),]
+ 
+  # select bottom data
+  bott_row_ds <- which(x$dphases_ds == "B")
+  
+  # if there is a bottom, calculate statistics relative to bottom
+  if (length(bott_row_ds) > 0) {
+    
+    #select decent data
+    desc_ds <-
+      x[1:first(which(x$dphases_ds == "B")),]
+    
+    # select ascent data
+    asc_ds <- 
+      x[last(which(x$dphases_ds == "B")):nrow(x),]
+    
+    # select bottom data
+    bott_row_ds <- which(x$dphases_ds == "B")
+    # as of v3.0: this is now selecting all data from the first "B" to the last "B"
+    bott_ds <- x[c(first(bott_row_ds):last(bott_row_ds)), 2:ncol(x)]
+    # calculate bottom time
+    # difference between first and last time in bottom
+    botttim_ds <-
+      as.numeric(difftime(bott_ds[nrow(bott_ds), "dtimes"], bott_ds[1, "dtimes"],
+                          units = "secs"))
+    # calculate bottom distance
+    bottdist_ds <- sum(abs(diff(bott_ds[!is.na(bott_ds[, "ddepths"]), "ddepths"])))
+    # calculate average depth of bottom
+    bottdep_mean_ds <- mean(bott_ds[, "ddepths"], na.rm = TRUE)
+    # calculate median depth of bottom
+    bottdep_median_ds <- median(bott_ds[, "ddepths"], na.rm = TRUE)
+    # calculate sd of bottom
+    bottdep_sd_ds <- sd(bott_ds[, "ddepths"], na.rm = TRUE)
+    # calculate average temperature at the bottom
+    temp_at_bott_ds <-
+      suppressWarnings(mean(bott_ds$dtemps, na.rm = TRUE) / 10)
+  } else{
+    # if no bottom fill in all bottom columns with NA
+    
+    
+    botttim_ds = bottdist_ds = bottdep_mean_ds = bottdep_median_ds = bottdep_sd_ds =
+      temp_at_bott_ds = NA
+    
+    #select decent data
+    desc_ds <-
+      x[1:which.max(x$ddepths),]
+    
+    # select ascent data
+    asc_ds <- 
+      x[which.max(x$ddepths):nrow(x),]
+    
+  }
+  
+  
+  # calculate ascent/decent statistics based on divesum phases
+  
+  # Descent
+  # begdesc_ds would be the same as begdesc (the start of the dive)
+
+  enddesc_ds <- desc_ds[nrow(desc_ds), "dtimes"]
+  desctim_ds <-
+    as.numeric(difftime(enddesc_ds, begdesc, units = "secs") + interval / 2)
+  
+  # Ascent
+  begasc_ds <- asc_ds[1, "dtimes"]
+  
+  # calculate time of ascent
+  asctim_ds <-
+    as.numeric(difftime(asc_ds[nrow(asc_ds), "dtimes"], begasc_ds, units = "secs") +
+                 interval / 2)
+  # calculate ascent distance
+  # ascent distance is the max depth of the ascent phase
+  ascdist_ds <- max(asc_ds[, "ddepths"], na.rm = TRUE)
+  descdist_ds <-  max(desc_ds[, "ddepths"], na.rm = TRUE)
+
+  # Average ascent and descent rate
+  # note: this is using the start and end times of ascent as descent phase as identified by diveMove
+  # numbers would be slightly different if identifyin descent and ascent phases using bottom_ds
+  ascrate_ds <- ascdist_ds / as.numeric(asctim_ds)
+  descrate_ds <- descdist_ds / as.numeric(desctim_ds)
   
   ## count number of 5s intervals with average rate of change <=1m/s
   #calculate mean of previous 5 values (inclusive, n=5), every 5 values (by=5)
@@ -444,7 +564,9 @@ oneDiveStats_GDR <- function (x,
   # count number of bins with rate of change >1.5 m/s
   dc15 <- length(dc$dc[dc$dc > 1.5])
   
-  # Calculate light variables
+
+# Calculate light variables -----------------------------------------------
+
   # light measured once per minute on the minute
   # take average of light reading at bottom to get est of bottom light (most likely will be same as minimum light)
   # Surpressing warnings because a lot of missing data so a lot of warnings generated
@@ -454,8 +576,9 @@ oneDiveStats_GDR <- function (x,
   lt_at_bott <-   suppressWarnings(mean(bott$dlux, na.rm = TRUE))
   lt_depmin <-    suppressWarnings(x$ddepths[which.min(x$dlux)])
   lt_depmax <-    suppressWarnings(x$ddepths[which.max(x$dlux)])
-  
-  # Calculate temperature variables
+
+# Calculate temperature variables -----------------------------------------------
+
   # Temperature measured every 30 seconds
   # Divide by 10 to get to degrees C
   temp_min <-   suppressWarnings(min(x$dtemps, na.rm = TRUE) / 10)
@@ -466,6 +589,11 @@ oneDiveStats_GDR <- function (x,
   temp_maxdiff <-   suppressWarnings(temp_max - temp_min)
   temp_at_bott <-
     suppressWarnings(mean(bott$dtemps, na.rm = TRUE) / 10)
+  
+
+
+# Classify dive types -----------------------------------------------------
+
   
   # Classify dive type using bottom time determined by diveMove
   # calculate how much time in each dive phase
@@ -565,10 +693,32 @@ oneDiveStats_GDR <- function (x,
       ylab = "Depth (m)"
     )
     if (length(bott_row_ds) > 0) {
+      # lines(asc$dtimes,
+      #       -asc$ddepths,
+      #       col = "purple",
+      #       lwd = 8)
+      # lines(desc$dtimes,
+      #       -desc$ddepths,
+      #       col = "darkblue",
+      #       lwd = 8)
+      # lines(bott$dtimes,
+      #       -bott$ddepths,
+      #       col = "green",
+      #       lwd = 8)
+      
       lines(bott_ds$dtimes,
             -bott_ds$ddepths,
             col = "green",
             lwd = 2)
+      lines(asc_ds$dtimes,
+            -asc_ds$ddepths,
+            col = "purple",
+            lwd=2)
+
+      lines(desc_ds$dtimes,
+            -desc_ds$ddepths,
+            col = "darkblue",
+            lwd=2)
       points(x$dtimes[du_row], -x$ddepths[du_row], pch = 19, col = "blue")
       points(x$dtimes[ud_row], -x$ddepths[ud_row], pch = 19, col = "red")
       points(x$dtimes[unds1m_rows],-x$ddepths[unds1m_rows], col = "orange", cex =
@@ -593,22 +743,30 @@ oneDiveStats_GDR <- function (x,
     }
   }
   
-  # create data frame with all calculated vars
+
+# Create data frame with all dive stats -----------------------------------
+
   data.frame(
     did = did[1],
     begdesc,
     enddesc,
+    enddesc_ds,
     begasc,
+    begasc_ds,
     desctim,
+    desctim_ds,
     botttim,
     botttim_ds,
     asctim,
+    asctim_ds,
     enddive,
     divetim,
     descdist,
+    descdist_ds,
     bottdist,
     bottdist_ds,
     ascdist,
+    ascdist_ds,
     bottdep_mean,
     bottdep_mean_ds,
     bottdep_median,
@@ -617,7 +775,9 @@ oneDiveStats_GDR <- function (x,
     bottdep_sd_ds,
     maxdep,
     ascr = ascrate,
+    ascr_ds = ascrate_ds,
     descr = descrate,
+    descr_ds = descrate_ds,
     unds1m_ds,
     unds = unducount,
     lt_min = ifelse(lt_min == Inf, NA, lt_min),
@@ -649,4 +809,5 @@ oneDiveStats_GDR <- function (x,
   )
 }
 
-
+# x=td[td$dids==5034,]
+# oneDiveStats_GDR(x,interval=1,plot=TRUE)

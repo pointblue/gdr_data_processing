@@ -1,8 +1,9 @@
-# Script for processing all dive data from Geolocating Dive Recorders deployed on Adelie penguins on Ross Island 2016-2018 (last recoveries in 2019)
+# Script for processing all dive data from 1617-1819
+# Setting up to access files directly from AWS
 
-# Code written by A. Schmidt
-# modified in 2021 to correct foraging dive definition
-# code now also includes: 
+# Code written by AS
+# modified in 2021 to re-process dive data with correct foraging dive definition
+# code now also: 
   # 1. adjusting clocks for drift and rebooted loggers
   # 2. trimming to dives between deploy and retrieve dates (not inclusive)
 
@@ -17,108 +18,22 @@ if(length(new.packages)>0) {install.packages(new.packages)}
 lapply(list.of.packages, library, character.only = TRUE)
 
 # Set creditials for aws access
-Sys.setenv("AWS_ACCESS_KEY_ID" = "your_KEY_ID", "AWS_SECRET_ACCESS_KEY" = "your_secret_access_key", 
-           "AWS_DEFAULT_REGION" = "your_region")
+Sys.setenv("AWS_ACCESS_KEY_ID" = "AKIAIPIS43MIHABD4CVA", "AWS_SECRET_ACCESS_KEY" = "fU1svPybcvRx9zv02mPVvn2a/0lMhEdGzi2WG4Hu", 
+           "AWS_DEFAULT_REGION" = "us-west-2")
 
 
-# set working directory
-setwd("your_dir")
 
 # UNITS:
 # Temperature is measured every 30 seconds in 1/10 degree C, converted to degree C in processing
 # Pressure measured once per second in mBar, converted to meters in processing
 # Light is measured per minute on the minute in lux, not converted in processing
 
-# Step 1: zero offset correction to adjust for sensor drift
-
-# read in GDR deploy file
-# file contains data on all individuals that were deployed on
-depl_dat<- read.csv("data/croz_royds_gdr_depl_all_v2021-08-27.csv")%>%
-  filter(!is.na(filename))%>% # only include records for birds that had raw files
-  mutate(bird_fn = coalesce(bad_avid,bird_id))%>% # add column that has bad avid prioritized because this is how most files were named
-  select(season,br_col,bird_id,bird_fn,deploy_date,retrieve_date,filename,start_rec,end_rec,rebooted)
-
-
-# list files already processed in s3 bucket
-s3_files <- get_bucket_df("bucket_name", prefix="bucket_prefix")
-s3_str <- paste(substr(s3_files$Key[-1], 14,33),".txt",sep="")
-diff <- setdiff(filelist,s3_str)
-
-
-# Loop to process each file
-for(i in 1:length(diff)){
-  # pull out filename and paste to create path
-  # fn<-as.character(filelist[i])
-  fn <- diff[i]
-  message(paste("Processing", fn, "...", sep=" "))
-
-  path=paste("s3://bucket/bucket_prefix/",fn,sep="")
-  # Read in header of file and extract logger id number
-  log_id <- substr(str_match(s3read_using(fread, object = path, sep=";",nrows=8,col.names="log_id")[7],"Logger Id=(.*?)-ARE2")[2],3,5)
-  # print message if log ID matches
-  ifelse(log_id==substr(fn,15,17),message("log ID match"),
-         message(paste("**Warning** log ID in header does not match log id in file name: ","header log ID = ",log_id,", file name log id = ",substr(fn,11,14), sep=""),quote=FALSE))
-  deploy_date <- as.Date(depl_dat[depl_dat$filename==fn,"deploy_date"],format="%Y-%m-%d")
-  retrieve_date <- as.Date(depl_dat[depl_dat$filename==fn,"retrieve_date"], format="%Y-%m-%d")
-  
-  # Load data format date, add columns for depth and datetime and filter to deployment dates
-  # Add depth column to convert pressure (in mBar) to meters depth
-  # Depth (in meter) = 0.010197 x (Pressure_measured_in_mBar - Pressure_atmospheric)
-  # The average atmospheric pressure in the Ross Sea ~980 mBar
-
-  data <-s3read_using(fread, object = path,skip=25, drop=6, col.names=c("date","time","temp","pressure","lux"))
-  #format dates and filter
-  message("modifying data...")
-  data<-data%>%
-    mutate(depth=0.010197*(pressure-980),date=as.Date(date, format="%d/%m/%Y"),
-           time.posixct =as.POSIXct(paste(date, time, sep=" "), format="%Y-%m-%d %H:%M:%S", tz="GMT"))%>%
-    filter(date>=deploy_date&date<=retrieve_date)
-  # Format as TDR object
-  message("creating TDR object...")
-  tdrX <- createTDR(time=data$time.posixct,
-                    depth=data$depth,
-                    concurrentData=data[, c(3,5)],
-                    dtime=1, file="data")
-  # remove data object to free up memory
-  rm("data")
-  gc()
-  message("tdrX created, calibrating depth...")
-  
-  # test file took 4.66 hours to do the ZOC in 1718
-  # test file on aws took 3.68 hours for an 1819 file (32189)
-  start_time= Sys.time()
-  dcalib <- calibrateDepth(tdrX, dive.thr = 3,
-                           zoc.method="filter",
-                           depth.bound=c(-10,10),
-                           k=c(9,540),
-                           probs = c(0.5,0.05),
-                           descent.crit.q=0.01,
-                           ascent.crit.q=0,
-                           knot.factor = 20,
-                           na.rm=TRUE)
-  end_time = Sys.time()
-  message(paste("Total calibration time = ",difftime(end_time,start_time, units="hours")))
-  zoc_name<- paste(substr(fn,1,20),"_", "zoc",".Rda",sep="")
-  # save in case need to come back to later
-  s3saveRDS(dcalib, object=zoc_name,bucket="your_bucket", multipart=TRUE)
-  # Remove large objects from workspace
-  rm(list=c("dcalib","tdrX"))
-  # clean up temp directory
-  tmp_dir <- tempdir()
-  files <- list.files(tmp_dir, full.names = T, pattern = "^file")
-  file.remove(files)
-  message("****DONE****")
-  gc()  # run garbage collector to free up memory
-}
-
-
-
+# Step 1: zero offset correction completed previously (in 2018)
 
 # Step 2: calculate dive stats
 
 # read in additional data required to calculate dive stats
 # read in GDR deploy file
-# file contains data on all individuals that were deployed on
 depl_dat<- read.csv("data/croz_royds_gdr_depl_all_v2021-08-27.csv")%>%
   filter(!is.na(filename))%>% # only include records for birds that had raw files
   mutate(bird_fn = coalesce(bad_avid,bird_id))%>% # add column that has bad avid prioritized because this is how most files were named
@@ -146,7 +61,6 @@ gdr_depl <- depl_dat%>%
 
 # Apply diveStats_yr function to calculate diveStats from all birds in a season
 # saves individual csvs for each bird
-source("code/diveStats_GDR.R")
   
 # inputs to function:
 # season
@@ -158,39 +72,77 @@ source("code/diveStats_GDR.R")
 # out = path where individual diveStats files will be saved 
 
 # 2016 ####
+# source("~/Documents/code/ADPE_GDR/diveStats_GDR.R")
+source('code/divesum_diveStats_GDR.R')
 
 # apply function to list of bird_ids, individuals files written as output
 depl16 <- gdr_depl%>%
   filter(season==2016)
-s3_path="bucket"
-out16 = "out_path"
+s3_path16 = "bucket"
+out16 = "data/diveStats/1617"
 
 # if only running in one session, might want to use setDTthreads to allow data table functions to use more threads
-lapply(depl16$bird_fn,diveStats_yr,seas=2016,gdr_depl=gdr_depl,s3_path=s3_path,out=out16)
+lapply(
+  depl16$bird_fn,
+  diveStats_yr,
+  seas = 2016,
+  gdr_depl = gdr_depl,
+  s3_path = "bucket",
+  out = out16,
+  version = "ds",
+  strategy = "multisession"
+)
+
+
 
 # # 2017 ####
+# plan("sequential")
+# filter to get bird ids for the year
 depl17 <- gdr_depl%>%
   filter(season==2017)
 s3_path="bucket"
-out17 = "out_path"
+out17 = "data/diveStats/1718"
+lapply(
+  depl17$bird_fn,
+  diveStats_yr,
+  seas = 2017,
+  gdr_depl = gdr_depl,
+  s3_path = s3_path,
+  out = out17,
+  version = "ds",
+  strategy = "multisession"
+)
 
-lapply(depl17$bird_fn,diveStats_yr,seas=2017,gdr_depl=gdr_depl,s3_path=s3_path,out=out17)
+
 
 # 2018 ####
-depl18 <- gdr_depl%>%
-  filter(season==2018)
-s3_path="bucket"
-out18 = "out_path"
+depl18 <- gdr_depl %>%
+  filter(season == 2018)
+s3_path = "bucket"
+out18 = "data/diveStats/1819"
 
-lapply(depl18$bird_fn,diveStats_yr,seas=2018,gdr_depl=gdr_depl,s3_path=s3_path,out=out18)
+# plan("sequential")
+# source("~/Documents/code/ADPE_GDR/diveStats_GDR.R")
+lapply(
+  depl18$bird_fn,
+  diveStats_yr,
+  seas = 2018,
+  gdr_depl = gdr_depl,
+  s3_path = s3_path,
+  out = out18,
+  version = "ds",
+  strategy = "multisession"
+)
 
 # read in and bind diveStats by season ####
 # Once done with all years, read in files for each season and bind together
 # 1617####
-setwd("your_wd")
+# setwd("~/s3data/GDR_1617_diveStats")
+
+setwd("Z:/Informatics/S031/analyses/GDR/data/diveStats/1617/")
 file_ls <- list.files(pattern = ".csv$")
 length(file_ls)
-plan(multicore) # use multisession on windows
+plan(multisession) # use multisession on windows
 divefiles <- future_lapply(
   file_ls,
   read_csv,
@@ -199,11 +151,9 @@ divefiles <- future_lapply(
     begdesc = col_datetime(format = ""),
     enddesc = col_datetime(format = ""),
     begasc = col_datetime(format = ""),
-    botttim_ds = col_double(),
+    botttim = col_double(),
     enddive = col_datetime(format = ""),
     divetype = col_character(),
-    divetype_ds = col_character(),
-    divetype_as = col_character(),
     begdesc_orig = col_datetime(format = ""),
     file_id = col_character(),
     colony = col_character(),
@@ -217,19 +167,22 @@ diveStats_all_1617<-rbindlist(divefiles)%>%# 3 seconds on aws m4.10xlarge
 # check that have all birds in combined file
 unique(diveStats_all_1617$bird_fn)
 # write compiled file
-fwrite(diveStats_all_1617,"your_path")
+fwrite(diveStats_all_1617,"Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/diveStats_ds_all_1617.csv")
 #replace extreme values with NA
 diveStats_all_1617_filt<-diveStats_all_1617%>%
   filter(divetim<=420,maxdep <=190)%>%
   # for columns that start with temp_, replace with NA if temp_max >50, or if temp_min <(-5)
   mutate(across(starts_with("temp_"),~replace(.x,temp_max>50|temp_min<(-5),NA)))
 
+fwrite(diveStats_all_1617_filt,"Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/diveStats_ds_all_1617_filt.csv")
+
 
 # summarise deployments from 1617
 diveSumm_1617<-dive_summary(diveStats_all_1617,season=2016)
+write_csv(diveSumm_1617,"Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/gdr_divetable_1617.csv")
 
 diveSumm_1617_filt<-dive_summary(diveStats_all_1617_filt,season=2016)
-
+write_csv(diveSumm_1617_filt,"Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/gdr_divetable_1617_filt.csv")
 
 
 #figure to summarize 1617 deployments
@@ -254,14 +207,15 @@ p1617_filt <- diveSumm_1617_filt%>%
   ggtitle("2016 filtered")
 
 
-ggpubr::ggarrange(p1617,p1617_filt,nrow=1,ncol=2)
+# ggpubr::ggarrange(p1617,p1617_filt,nrow=1,ncol=2)
 
 
 # 1718 ####
-setwd("your_path")
+# setwd("~/s3data/GDR_1718_diveStats")
+setwd("Z:/Informatics/S031/analyses/GDR/data/diveStats/1718")
 file_ls <- list.files(pattern = ".csv$")
 length(file_ls)
-plan(multicore) # use multisession on windows
+plan(multisession) # use multisession on windows
 divefiles<- future_lapply(file_ls,read_csv, future.seed = TRUE)
 plan(sequential)
 # bind all files together
@@ -270,17 +224,28 @@ diveStats_all_1718<-rbindlist(divefiles)%>% # 3 seconds on aws m4.10xlarge. #Fai
 # check that have all bird in combined file
 unique(diveStats_all_1718$bird_fn)
 
+fwrite(diveStats_all_1718,"Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/diveStats_ds_all_1718.csv")
+# fwrite(diveStats_all_1718,"~/s3data/GDR_diveStats_all/diveStats_all_1718.csv")
+# diveStats_all_1718 <-fread("Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/diveStats_ds_all_1718.csv")
+
 #filter to remove outliers
 diveStats_all_1718_filt <-diveStats_all_1718%>%
   filter(divetim<=420,maxdep <=190)%>%
   # for columns that start with temp_, replace with NA if temp_max >50, or if temp_min <(-5)
   mutate(across(starts_with("temp_"),~replace(.x,temp_max>50|temp_min<(-5),NA)))
 
+# fwrite(diveStats_all_1718_filt,"~/s3data/GDR_diveStats_all/diveStats_all_1718_filtered.csv")
+fwrite(diveStats_all_1718_filt, "Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/diveStats_all_1718_filt.csv")
+
 
 # summarise deployments from 1718
 diveSumm_1718<-dive_summary(diveStats_all_1718,season=2017)
+# write_csv(diveSumm_1718,"~/s3data/GDR_diveStats_all/gdr_divetable_1718.csv")
+write_csv(diveSumm_1718,"Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/gdr_divetable_1718.csv")
 
 diveSumm_1718_filt<-dive_summary(diveStats_all_1718_filt,season=2017)
+# write_csv(diveSumm_1718,"~/s3data/GDR_diveStats_all/gdr_divetable_1718.csv")
+write_csv(diveSumm_1718_filt,"Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/gdr_divetable_1718_filt.csv")
 
 
 #figure to summarize deployments
@@ -304,14 +269,16 @@ p1718_filt <-diveSumm_1718_filt%>%
   facet_wrap(~variable,scales="free")+
   ggtitle("2017 filtered")
 
-ggpubr::ggarrange(p1718,p1718_filt,nrow=1,ncol=2)
+# ggpubr::ggarrange(p1718,p1718_filt,nrow=1,ncol=2)
 
 
 # 1819 ####
-setwd("your_path")
+
+# setwd("~/s3data/GDR_1819_diveStats")
+setwd("Z:/Informatics/S031/analyses/GDR/data/diveStats/1819")
 file_ls <- list.files(pattern = ".csv$")
 length(file_ls)
-plan(multicore) # use multisession on windows
+plan(multisession) # use multisession on windows
 divefiles <- future_lapply(
   file_ls,
   read_csv,
@@ -320,11 +287,9 @@ divefiles <- future_lapply(
     begdesc = col_datetime(format = ""),
     enddesc = col_datetime(format = ""),
     begasc = col_datetime(format = ""),
-    botttim_ds = col_double(),
+    botttim = col_double(),
     enddive = col_datetime(format = ""),
     divetype = col_character(),
-    divetype_ds = col_character(),
-    divetype_as = col_character(),
     begdesc_orig = col_datetime(format = ""),
     file_id = col_character(),
     colony = col_character(),
@@ -338,17 +303,27 @@ diveStats_all_1819<-rbindlist(divefiles)%>% # 3 seconds on aws m4.10xlarge. #Fai
   # check that have all bird in combined file
 unique(diveStats_all_1819$file_id)
 
+fwrite(diveStats_all_1819,"Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/diveStats_ds_all_1819.csv")
+# fwrite(diveStats_all_1819,"~/s3data/GDR_diveStats_all/diveStats_all_1819.csv")
+diveStats_all_1819 <- fread("Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/diveStats_ds_all_1819.csv")
+
 #filter to remove outliers
 diveStats_all_1819_filt <-diveStats_all_1819%>%
   filter(divetim<=420,maxdep <=190)%>%
   # for columns that start with temp_, replace with NA if temp_max >50, or if temp_min <(-5)
   mutate(across(starts_with("temp_"),~replace(.x,temp_max>50|temp_min<(-5),NA)))
+# fwrite(diveStats_all_1819_filt,"~/s3data/GDR_diveStats_all/diveStats_all_1819_filtered.csv")
+fwrite(diveStats_all_1819_filt,"Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/diveStats_ds_all_1819_filt.csv")
 
 # summarise deployments from 1819
 diveSumm_1819<-dive_summary(diveStats_all_1819,season=2018)
+# write_csv(diveSumm_1819,"~/s3data/GDR_diveStats_all/gdr_divetable_1819.csv")
+write_csv(diveSumm_1819,"Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/gdr_divetable_1819.csv")
 
 # summarise deployments from 1819 after filtering
 diveSumm_1819_filt<-dive_summary(diveStats_all_1819_filt,season=2018)
+# write_csv(diveSumm_1819,"~/s3data/GDR_diveStats_all/gdr_divetable_1819.csv")
+write_csv(diveSumm_1819_filt,"Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/gdr_divetable_1819_filt.csv")
 
 
 
@@ -374,10 +349,98 @@ p1819_filt <- diveSumm_1819_filt%>%
   facet_wrap(~variable,scales="free")+
   ggtitle("2018 dive deployment summary filtered")
 
-ggpubr::ggarrange(p1819,p1819_filt,nrow=1,ncol=2)
+# ggpubr::ggarrange(p1819,p1819_filt,nrow=1,ncol=2)
 
 # Bind all diveStats from all years together
 diveStats_all_yrs <- bind_rows(diveStats_all_1617,diveStats_all_1718,diveStats_all_1819)
+fwrite(diveStats_all_yrs, "Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/diveStats_ds_all.csv")
 
 diveStats_all_yrs_filt <- bind_rows(diveStats_all_1617_filt,diveStats_all_1718_filt,diveStats_all_1819_filt)
-fwrite(diveStats_all_yrs_filt, "your_path")
+fwrite(diveStats_all_yrs_filt, "Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/diveStats_ds_all_filt.csv")
+
+
+
+# Some visualizing####
+
+diveStats_all_yrs%>%
+  filter(season==2016)%>%
+  filter(divetim<=420,maxdep<=190,temp_max <=50,temp_min >=-5)%>%
+  summarise(maxdep=max(maxdep,na.rm = TRUE))%>%
+  ggplot(aes(date,maxdep))+
+  geom_col()+
+  facet_wrap(~bird_id,nrow=10,ncol=9)+
+  ggtitle("1617 max dive depth by day by bird")
+
+
+# make summary figs for all birds in a year
+diveStats_all_1718_filt%>%
+  group_by(bird_id,date)%>%
+  summarise(maxdep=max(maxdep,na.rm = TRUE))%>%
+  ggplot(aes(date,maxdep))+
+  geom_col()+
+  facet_wrap(~bird_id,nrow=10,ncol=9)+
+  ggtitle("1718 max dive depth by day by bird")
+
+
+diveStats_all_1617_filt <- diveStats_all_1617%>%
+  filter(divetim<(8*60))
+
+filter(diveStats_all_1718,divetim>480)%>%
+  ggplot(aes(maxdep,divetim))+
+  geom_text(aes(label = paste(bird_id, "^(", did, ")", sep = "")),
+                parse = TRUE, size=2)+
+  ggtitle("1718 divetime >480s (8 min)")
+
+
+diveStats_all_1718_filt%>%
+  # filter(divetim<500)%>%
+  group_by(bird_id,date)%>%
+  summarise(maxdur=max(divetim,na.rm = TRUE))%>%
+  ggplot(aes(date,maxdur))+
+  geom_col()+
+  facet_wrap(~bird_id,nrow=10,ncol=9)+
+  ggtitle("1718 max dive duration by day by bird")
+
+diveStats_all_1617%>%
+  # filter(divetim<500)%>%
+  group_by(bird_id,date)%>%
+  summarise(maxdur=max(divetim,na.rm = TRUE))
+
+diveStats_all_1617%>%
+  ggplot(aes(divetim))+
+  geom_histogram(bins=100)+375/60
+  ggtitle("1617 histogram of all dives by divetim")
+
+sd(diveStats_all_1617$divetim)
+mean(diveStats_all_1617$divetim)+2*sd(diveStats_all_1617$divetim)
+  facet_wrap(~bird_id,nrow=10,ncol=7,scales="free_y")+
+  ggtitle("1617 max dive duration by day by bird")
+  
+
+  
+# 1617 temperature plots
+diveStats_all_1718_filt%>%
+    # filter(divetim<500)%>%
+    # group_by(bird_id,date)%>%
+    # summarise(maxtemp=max(temp_max,na.rm = TRUE))%>%
+  ggplot(aes(temp_min))+
+  geom_histogram(bins=100)+
+  ggtitle("1718 min temp by dive")
+mean(diveStats_all_1617$temp_min,na.rm=TRUE)+2*sd(diveStats_all_1617$temp_min,na.rm=TRUE)
+min(diveStats_all_1617$temp_min,na.rm=TRUE) 
+max(diveStats_all_1617$temp_max,na.rm=TRUE)
+
+# 1718
+diveStats_all_1718%>%
+  filter(temp_min<=50&temp_min>=-5)%>%
+  # summarise(max=max(temp_min, na.rm=TRUE), min=min(temp_min,na.rm=TRUE))
+  # group_by(bird_id,date)%>%
+  # summarise(maxtemp=max(temp_max,na.rm = TRUE))%>%
+  ggplot(aes(temp_min))+
+  geom_histogram(bins=100)+
+  ggtitle("1718 min temp by dive (filtered to >=-5 and <= 50)")
+mean(diveStats_all_1718$temp_min,na.rm=TRUE)+2*sd(diveStats_all_1718$temp_min,na.rm=TRUE)
+min(diveStats_all_1718$temp_min,na.rm=TRUE) 
+max(diveStats_all_1718$temp_max,na.rm=TRUE)
+
+
