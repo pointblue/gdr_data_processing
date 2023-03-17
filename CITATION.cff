@@ -1,0 +1,44 @@
+# This CITATION.cff file was generated with cffinit.
+# Visit https://bit.ly/cffinit to generate yours today!
+
+cff-version: 1.2.0
+title: Geolocating Dive Recorder (GDR) processing code
+message: >-
+  If you use this software, please cite it using the
+  metadata from this file.
+type: software
+authors:
+  - given-names: Annie
+    family-names: Schmidt
+    email: aschmidt@pointblue.org
+    affiliation: Point Blue Conservation Science
+  - given-names: Simeon
+    family-names: Lisovski
+  - given-names: Amélie
+    family-names: Lescroël
+  - given-names: Grant
+    family-names: Ballard
+repository-code: 'https://github.com/pointblue/gdr_data_processing'
+abstract: >-
+  Contains code for processing raw data from Geolocating
+  Dive Recorders deployed on Adelie penguins on Ross Island
+  (2016-2018)
+
+
+  Code folder contains R scripts for processing raw pressure
+  data into dive statistics (dive data processing) and
+  processing light data into locations (geoloc code)
+
+
+  Project was funded by National Science Foundation awards
+  1543498, 1543541, 1543459 and NASA award Award No.
+  80NSSC19K0189. Please contact Annie Schmidt
+  aschmidt@pointblue.org or Grant Ballard
+  gballard@pointblue.org with questions.
+keywords:
+  - Adelie penguin
+  - Ross Sea
+  - diving behavior
+  - geolocation
+license: GPL-3.0
+version: v4.0.1
