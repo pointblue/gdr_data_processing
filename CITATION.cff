@@ -24,6 +24,7 @@ abstract: >-
   Dive Recorders deployed on Adelie penguins on Ross Island
   (2016-2018)
 
+doi: 10.5281/zenodo.7746791
 
   Code folder contains R scripts for processing raw pressure
   data into dive statistics (dive data processing) and
