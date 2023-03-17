@@ -23,9 +23,7 @@ abstract: >-
   Contains code for processing raw data from Geolocating
   Dive Recorders deployed on Adelie penguins on Ross Island
   (2016-2018)
-
-doi: 10.5281/zenodo.7746791
-
+  
   Code folder contains R scripts for processing raw pressure
   data into dive statistics (dive data processing) and
   processing light data into locations (geoloc code)
@@ -43,3 +41,4 @@ keywords:
   - geolocation
 license: GPL-3.0
 version: v4.0.1
+doi: 10.5281/zenodo.7746791
