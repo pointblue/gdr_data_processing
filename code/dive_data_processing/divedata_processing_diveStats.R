@@ -18,7 +18,7 @@ if(length(new.packages)>0) {install.packages(new.packages)}
 lapply(list.of.packages, library, character.only = TRUE)
 
 # Set creditials for aws access
-Sys.setenv("AWS_ACCESS_KEY_ID" = "AKIAIPIS43MIHABD4CVA", "AWS_SECRET_ACCESS_KEY" = "fU1svPybcvRx9zv02mPVvn2a/0lMhEdGzi2WG4Hu", 
+Sys.setenv("AWS_ACCESS_KEY_ID" = "fill with your id", "AWS_SECRET_ACCESS_KEY" = "definitely don't commit your real key", 
            "AWS_DEFAULT_REGION" = "us-west-2")
 
 
@@ -139,7 +139,6 @@ lapply(
 # 1617####
 # setwd("~/s3data/GDR_1617_diveStats")
 
-setwd("Z:/Informatics/S031/analyses/GDR/data/diveStats/1617/")
 file_ls <- list.files(pattern = ".csv$")
 length(file_ls)
 plan(multisession) # use multisession on windows
@@ -167,22 +166,22 @@ diveStats_all_1617<-rbindlist(divefiles)%>%# 3 seconds on aws m4.10xlarge
 # check that have all birds in combined file
 unique(diveStats_all_1617$bird_fn)
 # write compiled file
-fwrite(diveStats_all_1617,"Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/diveStats_ds_all_1617.csv")
+fwrite(diveStats_all_1617,"data/diveStats_ds_all_1617.csv")
 #replace extreme values with NA
 diveStats_all_1617_filt<-diveStats_all_1617%>%
   filter(divetim<=420,maxdep <=190)%>%
   # for columns that start with temp_, replace with NA if temp_max >50, or if temp_min <(-5)
   mutate(across(starts_with("temp_"),~replace(.x,temp_max>50|temp_min<(-5),NA)))
 
-fwrite(diveStats_all_1617_filt,"Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/diveStats_ds_all_1617_filt.csv")
+fwrite(diveStats_all_1617_filt,"data/diveStats_ds_all_1617_filt.csv")
 
 
 # summarise deployments from 1617
 diveSumm_1617<-dive_summary(diveStats_all_1617,season=2016)
-write_csv(diveSumm_1617,"Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/gdr_divetable_1617.csv")
+write_csv(diveSumm_1617,"data/GDR_diveStats_all/gdr_divetable_1617.csv")
 
 diveSumm_1617_filt<-dive_summary(diveStats_all_1617_filt,season=2016)
-write_csv(diveSumm_1617_filt,"Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/gdr_divetable_1617_filt.csv")
+write_csv(diveSumm_1617_filt,"data/gdr_divetable_1617_filt.csv")
 
 
 #figure to summarize 1617 deployments
@@ -224,9 +223,7 @@ diveStats_all_1718<-rbindlist(divefiles)%>% # 3 seconds on aws m4.10xlarge. #Fai
 # check that have all bird in combined file
 unique(diveStats_all_1718$bird_fn)
 
-fwrite(diveStats_all_1718,"Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/diveStats_ds_all_1718.csv")
-# fwrite(diveStats_all_1718,"~/s3data/GDR_diveStats_all/diveStats_all_1718.csv")
-# diveStats_all_1718 <-fread("Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/diveStats_ds_all_1718.csv")
+fwrite(diveStats_all_1718,"data/diveStats_ds_all_1718.csv")
 
 #filter to remove outliers
 diveStats_all_1718_filt <-diveStats_all_1718%>%
@@ -234,18 +231,15 @@ diveStats_all_1718_filt <-diveStats_all_1718%>%
   # for columns that start with temp_, replace with NA if temp_max >50, or if temp_min <(-5)
   mutate(across(starts_with("temp_"),~replace(.x,temp_max>50|temp_min<(-5),NA)))
 
-# fwrite(diveStats_all_1718_filt,"~/s3data/GDR_diveStats_all/diveStats_all_1718_filtered.csv")
-fwrite(diveStats_all_1718_filt, "Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/diveStats_all_1718_filt.csv")
+fwrite(diveStats_all_1718_filt, "data/diveStats_all_1718_filt.csv")
 
 
 # summarise deployments from 1718
 diveSumm_1718<-dive_summary(diveStats_all_1718,season=2017)
-# write_csv(diveSumm_1718,"~/s3data/GDR_diveStats_all/gdr_divetable_1718.csv")
-write_csv(diveSumm_1718,"Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/gdr_divetable_1718.csv")
+write_csv(diveSumm_1718,"data/gdr_divetable_1718.csv")
 
 diveSumm_1718_filt<-dive_summary(diveStats_all_1718_filt,season=2017)
-# write_csv(diveSumm_1718,"~/s3data/GDR_diveStats_all/gdr_divetable_1718.csv")
-write_csv(diveSumm_1718_filt,"Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/gdr_divetable_1718_filt.csv")
+write_csv(diveSumm_1718_filt,"data/gdr_divetable_1718_filt.csv")
 
 
 #figure to summarize deployments
@@ -275,7 +269,6 @@ p1718_filt <-diveSumm_1718_filt%>%
 # 1819 ####
 
 # setwd("~/s3data/GDR_1819_diveStats")
-setwd("Z:/Informatics/S031/analyses/GDR/data/diveStats/1819")
 file_ls <- list.files(pattern = ".csv$")
 length(file_ls)
 plan(multisession) # use multisession on windows
@@ -303,27 +296,24 @@ diveStats_all_1819<-rbindlist(divefiles)%>% # 3 seconds on aws m4.10xlarge. #Fai
   # check that have all bird in combined file
 unique(diveStats_all_1819$file_id)
 
-fwrite(diveStats_all_1819,"Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/diveStats_ds_all_1819.csv")
-# fwrite(diveStats_all_1819,"~/s3data/GDR_diveStats_all/diveStats_all_1819.csv")
-diveStats_all_1819 <- fread("Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/diveStats_ds_all_1819.csv")
+fwrite(diveStats_all_1819,"data/diveStats_ds_all_1819.csv")
+
+diveStats_all_1819 <- fread("data/diveStats_ds_all_1819.csv")
 
 #filter to remove outliers
 diveStats_all_1819_filt <-diveStats_all_1819%>%
   filter(divetim<=420,maxdep <=190)%>%
   # for columns that start with temp_, replace with NA if temp_max >50, or if temp_min <(-5)
   mutate(across(starts_with("temp_"),~replace(.x,temp_max>50|temp_min<(-5),NA)))
-# fwrite(diveStats_all_1819_filt,"~/s3data/GDR_diveStats_all/diveStats_all_1819_filtered.csv")
-fwrite(diveStats_all_1819_filt,"Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/diveStats_ds_all_1819_filt.csv")
+fwrite(diveStats_all_1819_filt,"data/diveStats_ds_all_1819_filt.csv")
 
 # summarise deployments from 1819
 diveSumm_1819<-dive_summary(diveStats_all_1819,season=2018)
-# write_csv(diveSumm_1819,"~/s3data/GDR_diveStats_all/gdr_divetable_1819.csv")
-write_csv(diveSumm_1819,"Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/gdr_divetable_1819.csv")
+write_csv(diveSumm_1819,"data/GDR_diveStats_all/gdr_divetable_1819.csv")
 
 # summarise deployments from 1819 after filtering
 diveSumm_1819_filt<-dive_summary(diveStats_all_1819_filt,season=2018)
-# write_csv(diveSumm_1819,"~/s3data/GDR_diveStats_all/gdr_divetable_1819.csv")
-write_csv(diveSumm_1819_filt,"Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/gdr_divetable_1819_filt.csv")
+write_csv(diveSumm_1819_filt,"data/gdr_divetable_1819_filt.csv")
 
 
 
@@ -353,10 +343,10 @@ p1819_filt <- diveSumm_1819_filt%>%
 
 # Bind all diveStats from all years together
 diveStats_all_yrs <- bind_rows(diveStats_all_1617,diveStats_all_1718,diveStats_all_1819)
-fwrite(diveStats_all_yrs, "Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/diveStats_ds_all.csv")
+fwrite(diveStats_all_yrs, "data/diveStats_ds_all.csv")
 
 diveStats_all_yrs_filt <- bind_rows(diveStats_all_1617_filt,diveStats_all_1718_filt,diveStats_all_1819_filt)
-fwrite(diveStats_all_yrs_filt, "Z:/Informatics/S031/analyses/GDR/data/diveStats/GDR_diveStats_all/diveStats_ds_all_filt.csv")
+fwrite(diveStats_all_yrs_filt, "data/diveStats_ds_all_filt.csv")
 
 
 
